@@ -1,0 +1,27 @@
+---
+name: Language-Befunge-Debugger
+version: 0.0.1
+author:
+  - 'Jerome Quelin <jquelin@cpan.org>'
+abstract: a graphical debugger for Language::Befunge
+license: perl
+resources:
+  license: http://dev.perl.org/licenses/
+requires:
+  Language::Befunge: 3.01
+  POE: 0
+  Storable: 0
+  Test::More: 0
+  Tk: 0
+  Tk::TableMatrix: 0
+build_requires:
+  Test::More: 0
+  perl: 5.008
+provides:
+  Language::Befunge::Debugger:
+    file: lib/Language/Befunge/Debugger.pm
+    version: 0.0.1
+generated_by: Module::Build version 0.2808
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.2.html
+  version: 1.2
