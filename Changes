@@ -3,11 +3,17 @@ Revision history for Language::Befunge::Debugger.
 High-level changelog
 ====================
 
+0.1.x    adding really needed capabilities
 0.0.x    initial work, with basic capabilities
 
 
 Low-level changelog
 ===================
+
+0.1.0 Tue Nov  6 19:19:24 CET 2007
+ - introducing color decay for better followup of the trail
+
+**
 
 0.0.1 Mon Nov  5 18:19:58 CET 2007
  - original version

@@ -23,6 +23,7 @@ WriteMakefile(
     PREREQ_PM => {
         'Language::Befunge' => 3.01,
         'POE'               => 0,
+        'Readonly'          => 0,
         'Tk'                => 0,
         'Tk::TableMatrix'   => 0,
         'Test::More'        => 0,

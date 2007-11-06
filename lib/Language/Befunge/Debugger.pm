@@ -13,18 +13,22 @@ use warnings;
 
 use Language::Befunge;
 use Language::Befunge::Vector;
+use Readonly;
 use Tk; # should come before POE
 use Tk::Dialog;
 use Tk::TableMatrix;
 use POE;
 
 
-our $VERSION = '0.0.1';
+our $VERSION = '0.1.0';
+Readonly my $DECAY => 8;
 
 #--
 # constructor
 
 sub spawn {
+    my ($class, %opts) = @_;
+
     POE::Session->create(
         inline_states => {
             _start     => \&_on_start,
@@ -33,7 +37,7 @@ sub spawn {
             _b_quit     => \&_on_b_quit,
             _tm_click   => \&_on_tm_click,
         },
-        args => \@ARGV,
+        args => \%opts,
     );
 }
 
@@ -41,11 +45,11 @@ sub spawn {
 # private events
 
 sub _on_start {
-    my ($k, $h, $s, $file) = @_[ KERNEL, HEAP, SESSION, ARG0 ];
+    my ($k, $h, $s, $opts) = @_[ KERNEL, HEAP, SESSION, ARG0 ];
 
     #-- load befunge file
     # FIXME: barf unless file exists
-    my $bef = $h->{bef} = Language::Befunge->new( $file );
+    my $bef = $h->{bef} = Language::Befunge->new( $opts->{file} );
     $bef->set_ips( [ Language::Befunge::IP->new($bef->get_dimensions) ] );
     $bef->set_retval(0);
 
@@ -54,6 +58,7 @@ sub _on_start {
 
     my $fh1 = $poe_main_window->Frame->pack(-fill=>'both', -expand=>1);
     my $tm = $fh1->Scrolled( 'TableMatrix',
+        -bg         => 'white',
         -scrollbars => 'osoe',
         -cols       => 80,
         -rows       => 25,
@@ -111,7 +116,11 @@ sub _on_start {
     #-- various initializations
     $tm->tagCell( 'current', '0,0' );
     $tm->tagConfigure( 'current', -bg => 'red' );
-    # FIXME: color decay
+    # color decay.
+    foreach my $i ( 0 .. $DECAY-1 ) {
+        my $v = sprintf "%02x", 255 / $DECAY * ($i+1);
+        $tm->tagConfigure( "decay$i", -bg => "#ff$v$v" );
+    }
 }
 
 #--
@@ -122,17 +131,31 @@ sub _on_b_next {
 
     my $bef = $h->{bef};
     my $tm  = $h->{w}{tm};
-    
+
     if ( scalar @{ $bef->get_ips } == 0 ) {
         # no more ip - end of program
         return;
     }
 
+    # get next ip
+    my $ip = shift @{ $bef->get_ips };
+    my $id = $ip->get_id;
+    $h->{oldpos}{$id} ||= [];
+
+    # do some color decay.
+    my $oldpos = $h->{oldpos}{$id};
+    unshift @$oldpos, _vec_to_tablematrix_index($ip->get_position);
+    pop     @$oldpos if scalar @$oldpos > $DECAY;
+    foreach my $i ( 0 .. $DECAY-1 ) {
+        last unless exists $oldpos->[$i];
+        $tm->tagCell("decay$i", $h->{oldpos}{$id}[$i]);
+    }
+
+
+
     # update gui
-    # FIXME: tag delete
 
     # advance next ip
-    my $ip = shift @{ $bef->get_ips };
     $bef->set_curip($ip);
     $bef->process_ip;
 
@@ -183,6 +206,12 @@ sub _get_cell_value {
     return chr( $torus->get_value($v) );
 }
 
+sub _vec_to_tablematrix_index {
+    my ($vec) = @_;
+    my ($x, $y) = $vec->get_all_components;
+    return "$y,$x";
+}
+
 
 1;
 
@@ -212,9 +241,19 @@ breakpoints, etc.
 
 =head1 CLASS METHODS
 
-=head2 Language::Befunge::Debugger->spawn;
+=head2 Language::Befunge::Debugger->spawn( %opts );
 
-Create a graphical debugger (a POE session).
+Create a graphical debugger (a POE session). One can pass the following
+options:
+
+=over 4
+
+=item file => $file
+
+A befunge program to be loaded for debug purposes.
+
+
+=back
 
 
 
