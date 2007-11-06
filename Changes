@@ -10,6 +10,10 @@ High-level changelog
 Low-level changelog
 ===================
 
+0.1.1 Wed Nov  7 00:20:21 CET 2007
+ - allocating one color per ip
+ - displaying one summary label per ip
+
 0.1.0 Tue Nov  6 19:19:24 CET 2007
  - introducing color decay for better followup of the trail
 

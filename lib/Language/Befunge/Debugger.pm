@@ -20,8 +20,10 @@ use Tk::TableMatrix;
 use POE;
 
 
-our $VERSION = '0.1.0';
-Readonly my $DECAY => 8;
+our $VERSION = '0.1.1';
+Readonly my $DECAY  => 8;
+Readonly my @COLORS => ( [255,0,0], [0,0,255], [0,255,0], [255,255,0], [255,0,255], [0,255,255] );
+
 
 #--
 # constructor
@@ -53,6 +55,7 @@ sub _on_start {
     $bef->set_ips( [ Language::Befunge::IP->new($bef->get_dimensions) ] );
     $bef->set_retval(0);
 
+    $h->{ips} = [];
 
     #-- create gui
 
@@ -94,33 +97,12 @@ sub _on_start {
         -command => $s->postback('_b_continue'),
     )->pack(-side=>'left');
 
-    # current position
-    my $vec = Language::Befunge::Vector->new_zeroes(2);
-    my $val = $h->{bef}->get_torus->get_value($vec);
-    my $chr = chr $val;
-    my $l_curpos = $h->{w}{l_curpos} = $poe_main_window->Label(
-        -text    => "Position: (0,0) $chr (ord=$val)",
-        -justify => 'left',
-        -anchor  => 'w'
-    )->pack(-fill=>'x', -expand=>1);
 
-    # stack
-    my $l_stack = $h->{w}{l_stack} = $poe_main_window->Label(
-        -text    => 'Stack = []',
-        -justify => 'left',
-        -anchor  => 'w'
-    )->pack(-fill=>'x', -expand=>1);
-
-    #FIXME: lists of ips
+    # frame with one summary label per running ip
+    $h->{w}{f_ips} = $poe_main_window->Frame->pack(-fill=>'x');
 
     #-- various initializations
-    $tm->tagCell( 'current', '0,0' );
-    $tm->tagConfigure( 'current', -bg => 'red' );
-    # color decay.
-    foreach my $i ( 0 .. $DECAY-1 ) {
-        my $v = sprintf "%02x", 255 / $DECAY * ($i+1);
-        $tm->tagConfigure( "decay$i", -bg => "#ff$v$v" );
-    }
+    #$tm->tagCell( 'current', '0,0' );
 }
 
 #--
@@ -129,7 +111,9 @@ sub _on_start {
 sub _on_b_next {
     my ($h) = $_[HEAP];
 
+    my $w   = $h->{w};
     my $bef = $h->{bef};
+    my $ips = $h->{ips};
     my $tm  = $h->{w}{tm};
 
     if ( scalar @{ $bef->get_ips } == 0 ) {
@@ -142,13 +126,36 @@ sub _on_b_next {
     my $id = $ip->get_id;
     $h->{oldpos}{$id} ||= [];
 
+    if ( ! exists $ips->[$id] ) {
+        # newly created ip - initializing data structure.
+
+        # - decay colors
+        my ($r,$g,$b) = exists $COLORS[$id] ?  @{$COLORS[$id]} : (rand(100), rand(100), rand(100));
+        my $bgcolor;
+        foreach my $i ( 0 .. $DECAY-1 ) {
+            my $ri = sprintf "%02x", $r + (255-$r) / $DECAY * ($i+1);
+            my $gi = sprintf "%02x", $g + (255-$g) / $DECAY * ($i+1);
+            my $bi = sprintf "%02x", $b + (255-$b) / $DECAY * ($i+1);
+            $tm->tagConfigure( "decay-$id-$i", -bg => "#$ri$gi$bi" );
+            $bgcolor = "#$ri$gi$bi" if $i == int($DECAY/2);
+        }
+
+        # - summary label
+        $ips->[$id]{label} = $w->{f_ips}->Label(
+            -text    => _ip_to_label($ip,$bef),
+            -justify => 'left',
+            -anchor  => 'w',
+            -bg      => $bgcolor,
+        )->pack(-fill=>'x', -expand=>1);
+    }
+
     # do some color decay.
     my $oldpos = $h->{oldpos}{$id};
     unshift @$oldpos, _vec_to_tablematrix_index($ip->get_position);
     pop     @$oldpos if scalar @$oldpos > $DECAY;
     foreach my $i ( 0 .. $DECAY-1 ) {
         last unless exists $oldpos->[$i];
-        $tm->tagCell("decay$i", $h->{oldpos}{$id}[$i]);
+        $tm->tagCell("decay-$id-$i", $h->{oldpos}{$id}[$i]);
     }
 
 
@@ -163,13 +170,10 @@ sub _on_b_next {
     my $vec = $ip->get_position;
     my $val = $bef->get_torus->get_value($vec);
     my $chr = chr $val;
-    my ($curx, $cury) = $vec->get_all_components;
-    $tm->see("$cury,$curx");
-    $tm->tagCell( 'current', "$cury,$curx" );
-    # FIXME: more than 1 ip = different colors
-    my $stack = $ip->get_toss;
-    $h->{w}{l_stack} ->configure( -text => "Stack = [@$stack]" );
-    $h->{w}{l_curpos}->configure( -text => "Position: ($curx,$cury) $chr (ord=$val)" );
+    my $tmindex = _vec_to_tablematrix_index($vec);
+    $tm->see($tmindex);
+    $tm->tagCell( "decay-$id-0", $tmindex );
+    $ips->[$id]{label}->configure( -text => _ip_to_label($ip,$bef) );
 
 
     # end of tick: no more ips to process
@@ -206,6 +210,16 @@ sub _get_cell_value {
     return chr( $torus->get_value($v) );
 }
 
+sub _ip_to_label {
+    my ($ip,$bef) = @_;
+    my $id     = $ip->get_id;
+    my $vec    = $ip->get_position;
+    my ($x,$y) = $vec->get_all_components;
+    my $stack  = $ip->get_toss;
+    my $val    = $bef->get_torus->get_value($vec);
+    my $chr    = chr $val;
+    return "IP#$id \@$x,$y $chr (ord=$val) [@$stack]";
+}
 sub _vec_to_tablematrix_index {
     my ($vec) = @_;
     my ($x, $y) = $vec->get_all_components;
