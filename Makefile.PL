@@ -26,6 +26,7 @@ WriteMakefile(
         'Readonly'          => 0,
         'Tk'                => 0,
         'Tk::TableMatrix'   => 0,
+        'Tk::ToolBar'       => 0,
         'Test::More'        => 0,
     },
     dist  => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },

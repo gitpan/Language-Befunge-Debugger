@@ -17,10 +17,11 @@ use Readonly;
 use Tk; # should come before POE
 use Tk::Dialog;
 use Tk::TableMatrix;
+use Tk::ToolBar;
 use POE;
 
 
-our $VERSION = '0.1.1';
+our $VERSION = '0.2.0';
 Readonly my $DECAY  => 8;
 Readonly my @COLORS => ( [255,0,0], [0,0,255], [0,255,0], [255,255,0], [255,0,255], [0,255,255] );
 
@@ -55,10 +56,37 @@ sub _on_start {
     $bef->set_ips( [ Language::Befunge::IP->new($bef->get_dimensions) ] );
     $bef->set_retval(0);
 
-    $h->{ips} = [];
+    $h->{ips}    = {};
+    $h->{tick}   = 0;
 
     #-- create gui
 
+    # toolbar
+    my @tb = (
+        [ 'Button', 'actexit16',        'quit',     '<Control-q>', '_b_quit' ],
+        [ 'Button', 'fileopen16',       'open',     '<Control-o>', '_b_open' ],
+        [ 'separator' ],
+        [ 'Button', 'playpause16',      'pause',    '<p>',         '_b_pause' ],
+        [ 'Button', 'nav1rightarrow16', 'next',     '<n>',         '_b_next' ],
+        [ 'Button', 'nav2rightarrow16', 'continue', '<c>',         '_b_continue' ],
+    );
+    my $tb = $poe_main_window->ToolBar(-movable=>0);
+    foreach my $item ( @tb ) {
+        my $type = shift @$item;
+        $tb->separator( -movable => 0 ), next if $type eq 'separator';
+        $tb->$type(
+            -image       => $item->[0],
+            -tip         => $item->[1],
+            -accelerator => $item->[2],
+            -command     => $s->postback($item->[3])
+        );
+    }
+    $tb->separator(-movable => 0 );
+    $h->{w}{ip} = $tb->LabEntry(-label=>'tick', -textvariable=>\$h->{tick},-justify=>'center',-state=>'readonly');
+
+    #
+
+    # playfield
     my $fh1 = $poe_main_window->Frame->pack(-fill=>'both', -expand=>1);
     my $tm = $fh1->Scrolled( 'TableMatrix',
         -bg         => 'white',
@@ -71,32 +99,6 @@ sub _on_start {
         -browsecmd  => $s->postback('_tm_click'),
     )->pack(-side=>'left', -fill=>'both', -expand=>1);
     $h->{w}{tm} = $tm;
-
-    # buttons
-    my $fv = $fh1-> Frame->pack(-fill=>'x');
-    my $fh11 = $fv->Frame->pack;
-    my $b_quit = $fh11->Button(
-        -text    => 'Quit',
-        -command => $s->postback('_b_quit'),
-    )->pack(-side=>'left');
-    my $b_restart = $fh11->Button(
-        -text    => 'Restart',
-        -command => $s->postback('_b_restart'),
-    )->pack(-side=>'left');
-    my $fh12 = $fv->Frame->pack;
-    my $b_pause = $fh12->Button(
-        -text    => '||',
-        -command => $s->postback('_b_pause'),
-    )->pack(-side=>'left');
-    my $b_next = $fh12->Button(
-        -text    => '>',
-        -command => $s->postback('_b_next'),
-    )->pack(-side=>'left');
-    my $b_continue = $fh12->Button(
-        -text    => '>>',
-        -command => $s->postback('_b_continue'),
-    )->pack(-side=>'left');
-
 
     # frame with one summary label per running ip
     $h->{w}{f_ips} = $poe_main_window->Frame->pack(-fill=>'x');
@@ -124,38 +126,43 @@ sub _on_b_next {
     # get next ip
     my $ip = shift @{ $bef->get_ips };
     my $id = $ip->get_id;
-    $h->{oldpos}{$id} ||= [];
 
-    if ( ! exists $ips->[$id] ) {
+    if ( ! exists $ips->{$ip} ) {
         # newly created ip - initializing data structure.
+        $ips->{$ip}{object} = $ip;
 
         # - decay colors
-        my ($r,$g,$b) = exists $COLORS[$id] ?  @{$COLORS[$id]} : (rand(100), rand(100), rand(100));
-        my $bgcolor;
+        my ($r,$g,$b) = exists $COLORS[$id] ?  @{$COLORS[$id]} : (rand(255), rand(255), rand(255));
         foreach my $i ( 0 .. $DECAY-1 ) {
             my $ri = sprintf "%02x", $r + (255-$r) / $DECAY * ($i+1);
             my $gi = sprintf "%02x", $g + (255-$g) / $DECAY * ($i+1);
             my $bi = sprintf "%02x", $b + (255-$b) / $DECAY * ($i+1);
             $tm->tagConfigure( "decay-$id-$i", -bg => "#$ri$gi$bi" );
-            $bgcolor = "#$ri$gi$bi" if $i == int($DECAY/2);
+            $ips->{$ip}{bgcolor} = "#$ri$gi$bi" if $i == 0;
         }
 
         # - summary label
-        $ips->[$id]{label} = $w->{f_ips}->Label(
+        $ips->{$ip}{label} = $w->{f_ips}->Label(
             -text    => _ip_to_label($ip,$bef),
             -justify => 'left',
             -anchor  => 'w',
-            -bg      => $bgcolor,
+            -bg      => $ips->{$ip}{bgcolor},
         )->pack(-fill=>'x', -expand=>1);
+
+        # - old positions
+        $ips->{$ip}{oldpos} = [];
     }
 
+    # show color of ip being currently processed
+    $w->{ip}->configure(-bg=>$ips->{$ip}{bgcolor});
+
     # do some color decay.
-    my $oldpos = $h->{oldpos}{$id};
+    my $oldpos = $ips->{$ip}{oldpos};
     unshift @$oldpos, _vec_to_tablematrix_index($ip->get_position);
     pop     @$oldpos if scalar @$oldpos > $DECAY;
-    foreach my $i ( 0 .. $DECAY-1 ) {
-        last unless exists $oldpos->[$i];
-        $tm->tagCell("decay-$id-$i", $h->{oldpos}{$id}[$i]);
+    foreach my $i ( reverse 0 .. $DECAY-1 ) {
+        next unless exists $oldpos->[$i];
+        $tm->tagCell("decay-$id-$i", $oldpos->[$i]);
     }
 
 
@@ -166,20 +173,39 @@ sub _on_b_next {
     $bef->set_curip($ip);
     $bef->process_ip;
 
-    # update gui
-    my $vec = $ip->get_position;
-    my $val = $bef->get_torus->get_value($vec);
-    my $chr = chr $val;
-    my $tmindex = _vec_to_tablematrix_index($vec);
-    $tm->see($tmindex);
-    $tm->tagCell( "decay-$id-0", $tmindex );
-    $ips->[$id]{label}->configure( -text => _ip_to_label($ip,$bef) );
+    if ( $ip->get_end ) {
+        # ip should be terminated - remove summary label.
+        $ips->{$ip}{label}->destroy;
+        delete $ips->{$ip}{label};
+    } else {
+        # update gui
+        my $tmindex = _vec_to_tablematrix_index($ip->get_position);
+        $tm->see($tmindex);
+        $tm->tagCell( "decay-$id-0", $tmindex );
+        $ips->{$ip}{label}->configure( -text => _ip_to_label($ip,$bef) );
+    }
 
 
     # end of tick: no more ips to process
     if ( scalar @{ $bef->get_ips } == 0 ) {
+        $h->{tick}++;
         $bef->set_ips( $bef->get_newips );
         $bef->set_newips( [] );
+
+        # color decay on terminated ips
+        my @ips    = map { $ips->{$_}{object} } keys %$ips;
+        my @oldips = grep { $_->get_end } @ips;
+        foreach my $oldip ( @oldips ) {
+            my $oldid = $oldip->get_id;
+            my $oldpos = $ips->{$oldip}{oldpos};
+            pop @$oldpos;
+            foreach my $i ( 0 .. $DECAY-1 ) {
+                last unless exists $oldpos->[$i];
+                my $decay = $i + $DECAY - scalar(@$oldpos);
+                $tm->tagCell("decay-$oldid-$decay", $oldpos->[$i]);
+            }
+            delete $ips->{$oldip} unless scalar(@$oldpos);
+        }
     }
 
 

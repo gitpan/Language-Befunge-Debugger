@@ -10,6 +10,13 @@ High-level changelog
 Low-level changelog
 ===================
 
+ - dropping buttons for a toolbar 
+ - adding a tick counter, with indication of current ip being processed
+ - removing terminated ips
+ - using whole color range to pick a random one
+
+**
+
 0.1.1 Wed Nov  7 00:20:21 CET 2007
  - allocating one color per ip
  - displaying one summary label per ip

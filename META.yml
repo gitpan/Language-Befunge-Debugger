@@ -1,6 +1,6 @@
 ---
 name: Language-Befunge-Debugger
-version: 0.1.1
+version: 0.2.0
 author:
   - 'Jerome Quelin <jquelin@cpan.org>'
 abstract: a graphical debugger for Language::Befunge
@@ -15,13 +15,14 @@ requires:
   Test::More: 0
   Tk: 0
   Tk::TableMatrix: 0
+  Tk::ToolBar: 0
 build_requires:
   Test::More: 0
   perl: 5.008
 provides:
   Language::Befunge::Debugger:
     file: lib/Language/Befunge/Debugger.pm
-    version: 0.1.1
+    version: 0.2.0
 generated_by: Module::Build version 0.2808
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html
