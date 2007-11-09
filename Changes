@@ -3,6 +3,7 @@ Revision history for Language::Befunge::Debugger.
 High-level changelog
 ====================
 
+0.3.x    more runtime possibilities
 0.2.x    revamped interface
 0.1.x    adding really needed capabilities
 0.0.x    initial work, with basic capabilities
@@ -10,6 +11,11 @@ High-level changelog
 
 Low-level changelog
 ===================
+
+0.3.0 Fri Nov  9 19:03:44 CET 2007
+ - possibility to resume run instead of stepping
+
+**
 
 0.2.2 Fri Nov  9 17:41:18 CET 2007
  - color first ip created before starting execution

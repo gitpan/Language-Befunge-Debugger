@@ -22,8 +22,10 @@ use Tk::ToolBar;
 use POE;
 
 
-our $VERSION = '0.2.2';
+our $VERSION = '0.3.0';
+
 Readonly my $DECAY  => 8;
+Readonly my $DELAY  => 0.1;
 Readonly my @COLORS => ( [255,0,0], [0,0,255], [0,255,0], [255,255,0], [255,0,255], [0,255,255] );
 
 
@@ -39,8 +41,10 @@ sub spawn {
             # internal actions
             _do_open_file => \&_do_open_file,
             # gui
+            _b_continue   => \&_on_b_continue,
             _b_next       => \&_on_b_next,
             _b_open       => \&_on_b_open,
+            _b_pause      => \&_on_b_pause,
             _b_quit       => \&_on_b_quit,
             _tm_click     => \&_on_tm_click,
         },
@@ -68,14 +72,18 @@ sub _do_open_file {
     my $newip = Language::Befunge::IP->new($bef->get_dimensions);
     $bef->set_ips( [ $newip ] );
     $bef->set_retval(0);
-    $h->{ips}  = {};
-    $h->{tick} = 0;
+    $h->{ips}      = {};
+    $h->{tick}     = 0;
+    $h->{continue} = 0;
     _create_ip_struct( $h, $newip );
     my $id = $newip->get_id;
 
     # force rescanning of the playfield
     $tm->configure(-command => sub { _get_cell_value($h->{bef}->get_torus,@_[1,2]) });
     $tm->tagCell("decay-$id-0", '0,0');
+    $h->{w}{_b_pause}->configure( -state => 'disabled' );
+    $h->{w}{_b_next}->configure( -state => 'normal' );
+    $h->{w}{_b_continue}->configure( -state => 'normal' );
 }
 
 
@@ -100,7 +108,7 @@ sub _on_start {
     foreach my $item ( @tb ) {
         my $type = shift @$item;
         $tb->separator( -movable => 0 ), next if $type eq 'separator';
-        $tb->$type(
+        $h->{w}{$item->[3]} = $tb->$type(
             -image       => $item->[0],
             -tip         => $item->[1],
             -accelerator => $item->[2],
@@ -132,8 +140,17 @@ sub _on_start {
 #--
 # gui events
 
+sub _on_b_continue {
+    my ($k, $h) = @_[KERNEL, HEAP];
+    $h->{continue} = 1;
+    $h->{w}{_b_pause}->configure( -state => 'normal' );
+    $h->{w}{_b_next}->configure( -state => 'disabled' );
+    $h->{w}{_b_continue}->configure( -state => 'disabled' );
+    $k->yield('_b_next');
+}
+
 sub _on_b_next {
-    my ($h) = $_[HEAP];
+    my ($k,$h) = @_[KERNEL, HEAP];
 
     my $w   = $h->{w};
     my $bef = $h->{bef};
@@ -205,6 +222,17 @@ sub _on_b_next {
             delete $ips->{$oldip} unless scalar(@$oldpos);
         }
     }
+
+    # fire again if user asked for continue.
+    $k->delay_set( '_b_next', $DELAY ) if $h->{continue};
+}
+
+sub _on_b_pause {
+    my ($k, $h) = @_[KERNEL, HEAP];
+    $h->{continue} = 0;
+    $h->{w}{_b_pause}->configure( -state => 'disabled' );
+    $h->{w}{_b_next}->configure( -state => 'normal' );
+    $h->{w}{_b_continue}->configure( -state => 'normal' );
 }
 
 sub _on_b_open {
@@ -260,6 +288,7 @@ sub _create_ip_struct {
         $tm->tagConfigure( "decay-$id-$i", -bg => "#$ri$gi$bi" );
         $ips->{$ip}{bgcolor} = "#$ri$gi$bi" if $i == 0;
     }
+    $w->{ip}->configure( -bg => $ips->{$ip}{bgcolor} );
 
     # - summary label
     $ips->{$ip}{label} = $w->{f_ips}->Label(
