@@ -22,7 +22,7 @@ use Tk::ToolBar;
 use POE;
 
 
-our $VERSION = '0.2.1';
+our $VERSION = '0.2.2';
 Readonly my $DECAY  => 8;
 Readonly my @COLORS => ( [255,0,0], [0,0,255], [0,255,0], [255,255,0], [255,0,255], [0,255,255] );
 
@@ -65,13 +65,17 @@ sub _do_open_file {
 
     # load the new file
     my $bef = $h->{bef} = Language::Befunge->new( $file );
-    $bef->set_ips( [ Language::Befunge::IP->new($bef->get_dimensions) ] );
+    my $newip = Language::Befunge::IP->new($bef->get_dimensions);
+    $bef->set_ips( [ $newip ] );
     $bef->set_retval(0);
     $h->{ips}  = {};
     $h->{tick} = 0;
+    _create_ip_struct( $h, $newip );
+    my $id = $newip->get_id;
 
     # force rescanning of the playfield
     $tm->configure(-command => sub { _get_cell_value($h->{bef}->get_torus,@_[1,2]) });
+    $tm->tagCell("decay-$id-0", '0,0');
 }
 
 
@@ -145,31 +149,7 @@ sub _on_b_next {
     my $ip = shift @{ $bef->get_ips };
     my $id = $ip->get_id;
 
-    if ( ! exists $ips->{$ip} ) {
-        # newly created ip - initializing data structure.
-        $ips->{$ip}{object} = $ip;
-
-        # - decay colors
-        my ($r,$g,$b) = exists $COLORS[$id] ?  @{$COLORS[$id]} : (rand(255), rand(255), rand(255));
-        foreach my $i ( 0 .. $DECAY-1 ) {
-            my $ri = sprintf "%02x", $r + (255-$r) / $DECAY * ($i+1);
-            my $gi = sprintf "%02x", $g + (255-$g) / $DECAY * ($i+1);
-            my $bi = sprintf "%02x", $b + (255-$b) / $DECAY * ($i+1);
-            $tm->tagConfigure( "decay-$id-$i", -bg => "#$ri$gi$bi" );
-            $ips->{$ip}{bgcolor} = "#$ri$gi$bi" if $i == 0;
-        }
-
-        # - summary label
-        $ips->{$ip}{label} = $w->{f_ips}->Label(
-            -text    => _ip_to_label($ip,$bef),
-            -justify => 'left',
-            -anchor  => 'w',
-            -bg      => $ips->{$ip}{bgcolor},
-        )->pack(-fill=>'x', -expand=>1);
-
-        # - old positions
-        $ips->{$ip}{oldpos} = [];
-    }
+    _create_ip_struct($h, $ip) unless exists $ips->{$ip};
 
     # show color of ip being currently processed
     $w->{ip}->configure(-bg=>$ips->{$ip}{bgcolor});
@@ -255,6 +235,44 @@ sub _on_tm_click {
 
 #--
 # private subs
+
+sub _create_ip_struct {
+    my ($h, $ip) = @_;
+
+    my $bef = $h->{bef};
+    my $ips = $h->{ips};
+    my $id  = $ip->get_id;
+    my $w   = $h->{w};
+    my $tm  = $w->{tm};
+
+    # newly created ip - initializing data structure.
+    $ips->{$ip}{object} = $ip;
+
+    # - decay colors
+    my ($r,$g,$b) = exists $COLORS[$id]
+        ?  @{$COLORS[$id]}
+        : (rand(255), rand(255), rand(255));
+
+    foreach my $i ( 0 .. $DECAY-1 ) {
+        my $ri = sprintf "%02x", $r + (255-$r) / $DECAY * ($i+1);
+        my $gi = sprintf "%02x", $g + (255-$g) / $DECAY * ($i+1);
+        my $bi = sprintf "%02x", $b + (255-$b) / $DECAY * ($i+1);
+        $tm->tagConfigure( "decay-$id-$i", -bg => "#$ri$gi$bi" );
+        $ips->{$ip}{bgcolor} = "#$ri$gi$bi" if $i == 0;
+    }
+
+    # - summary label
+    $ips->{$ip}{label} = $w->{f_ips}->Label(
+        -text    => _ip_to_label($ip,$bef),
+        -justify => 'left',
+        -anchor  => 'w',
+        -bg      => $ips->{$ip}{bgcolor},
+    )->pack(-fill=>'x', -expand=>1);
+
+    # - old positions
+    $ips->{$ip}{oldpos} = [];
+}
+
 
 sub _get_cell_value {
     my ($torus, $row, $col) = @_;
