@@ -16,12 +16,13 @@ use Language::Befunge::Vector;
 use Readonly;
 use Tk; # should come before POE
 use Tk::Dialog;
+use Tk::FBox;
 use Tk::TableMatrix;
 use Tk::ToolBar;
 use POE;
 
 
-our $VERSION = '0.2.0';
+our $VERSION = '0.2.1';
 Readonly my $DECAY  => 8;
 Readonly my @COLORS => ( [255,0,0], [0,0,255], [0,255,0], [255,255,0], [255,0,255], [0,255,255] );
 
@@ -35,10 +36,13 @@ sub spawn {
     POE::Session->create(
         inline_states => {
             _start     => \&_on_start,
+            # internal actions
+            _do_open_file => \&_do_open_file,
             # gui
-            _b_next     => \&_on_b_next,
-            _b_quit     => \&_on_b_quit,
-            _tm_click   => \&_on_tm_click,
+            _b_next       => \&_on_b_next,
+            _b_open       => \&_on_b_open,
+            _b_quit       => \&_on_b_quit,
+            _tm_click     => \&_on_tm_click,
         },
         args => \%opts,
     );
@@ -47,17 +51,35 @@ sub spawn {
 #--
 # private events
 
+sub _do_open_file {
+    my ($h, $file) = @_[HEAP, ARG0];
+
+    # clean old ips
+    foreach my $ip ( keys %{ $h->{ips} } ) {
+        next unless defined $h->{ips}{$ip}{label};
+        $h->{ips}{$ip}{label}->destroy;
+        delete $h->{ips}{$ip}{label};
+    }
+    my $tm = $h->{w}{tm};
+    $tm->tagDelete($_) for $tm->tagNames('decay-*');
+
+    # load the new file
+    my $bef = $h->{bef} = Language::Befunge->new( $file );
+    $bef->set_ips( [ Language::Befunge::IP->new($bef->get_dimensions) ] );
+    $bef->set_retval(0);
+    $h->{ips}  = {};
+    $h->{tick} = 0;
+
+    # force rescanning of the playfield
+    $tm->configure(-command => sub { _get_cell_value($h->{bef}->get_torus,@_[1,2]) });
+}
+
+
 sub _on_start {
     my ($k, $h, $s, $opts) = @_[ KERNEL, HEAP, SESSION, ARG0 ];
 
     #-- load befunge file
-    # FIXME: barf unless file exists
-    my $bef = $h->{bef} = Language::Befunge->new( $opts->{file} );
-    $bef->set_ips( [ Language::Befunge::IP->new($bef->get_dimensions) ] );
-    $bef->set_retval(0);
-
-    $h->{ips}    = {};
-    $h->{tick}   = 0;
+    $k->yield( $opts->{file} ? ('_do_open_file', $opts->{file}) : '_b_open' );
 
     #-- create gui
 
@@ -95,16 +117,12 @@ sub _on_start {
         -rows       => 25,
         -colwidth   => 3,
         -state      => 'disabled',
-        -command    => sub { _get_cell_value($h->{bef}->get_torus,@_[1,2]) },
         -browsecmd  => $s->postback('_tm_click'),
     )->pack(-side=>'left', -fill=>'both', -expand=>1);
     $h->{w}{tm} = $tm;
 
     # frame with one summary label per running ip
     $h->{w}{f_ips} = $poe_main_window->Frame->pack(-fill=>'x');
-
-    #-- various initializations
-    #$tm->tagCell( 'current', '0,0' );
 }
 
 #--
@@ -207,13 +225,21 @@ sub _on_b_next {
             delete $ips->{$oldip} unless scalar(@$oldpos);
         }
     }
+}
 
-
+sub _on_b_open {
+    my @types = (
+       [ 'Befunge scripts', '.bef' ],
+       [ 'All files',       '*'    ]
+    );
+    # i know, this prevent poe from running
+    my $file = $poe_main_window->getOpenFile(-filetypes => \@types);
+    $_[KERNEL]->yield( '_do_open_file', $file )
+        if defined($file) && $file ne '';
 }
 
 sub _on_b_quit {
     $poe_main_window->destroy;
-    #exit;
 }
 
 sub _on_tm_click {

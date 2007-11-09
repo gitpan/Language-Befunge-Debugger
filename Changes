@@ -3,6 +3,7 @@ Revision history for Language::Befunge::Debugger.
 High-level changelog
 ====================
 
+0.2.x    revamped interface
 0.1.x    adding really needed capabilities
 0.0.x    initial work, with basic capabilities
 
@@ -10,6 +11,11 @@ High-level changelog
 Low-level changelog
 ===================
 
+0.2.1 Fri Nov  9 12:50:34 CET 2007
+ - file opening now works
+ - prompting for file if no argument
+
+0.2.0 Wed Nov  7 18:03:34 CET 2007
  - dropping buttons for a toolbar 
  - adding a tick counter, with indication of current ip being processed
  - removing terminated ips
