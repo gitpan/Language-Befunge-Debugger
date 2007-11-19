@@ -1,5 +1,5 @@
 #
-# This file is part of Language::Befunge.
+# This file is part of Language::Befunge::Debugger.
 # Copyright (c) 2007 Jerome Quelin, all rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
@@ -12,6 +12,7 @@ use strict;
 use warnings;
 
 use Language::Befunge;
+use Language::Befunge::Debugger::Breakpoints;
 use Language::Befunge::Vector;
 use Readonly;
 use Tk; # should come before POE
@@ -22,7 +23,7 @@ use Tk::ToolBar;
 use POE;
 
 
-our $VERSION = '0.3.0';
+our $VERSION = '0.3.1';
 
 Readonly my $DECAY  => 8;
 Readonly my $DELAY  => 0.1;
@@ -32,24 +33,33 @@ Readonly my @COLORS => ( [255,0,0], [0,0,255], [0,255,0], [255,255,0], [255,0,25
 #--
 # constructor
 
+#
+# my $id = Language::Befunge::Debugger->spawn(%ops);
+#
+# create a new debugger gui for a befunge script. refer to the embedded
+# pod for an explanation of the supported options.
+#
 sub spawn {
     my ($class, %opts) = @_;
 
-    POE::Session->create(
+    my $session = POE::Session->create(
         inline_states => {
-            _start     => \&_on_start,
+            _start         => \&_on_start,
             # internal actions
-            _do_open_file => \&_do_open_file,
+            _do_open_file  => \&_do_open_file,
             # gui
-            _b_continue   => \&_on_b_continue,
-            _b_next       => \&_on_b_next,
-            _b_open       => \&_on_b_open,
-            _b_pause      => \&_on_b_pause,
-            _b_quit       => \&_on_b_quit,
-            _tm_click     => \&_on_tm_click,
+            _b_breakpoints => \&_on_b_breakpoints,
+            _b_continue    => \&_on_b_continue,
+            _b_next        => \&_on_b_next,
+            _b_open        => \&_on_b_open,
+            _b_pause       => \&_on_b_pause,
+            _b_quit        => \&_on_b_quit,
+            _b_restart     => \&_on_b_restart,
+            _tm_click      => \&_on_tm_click,
         },
         args => \%opts,
     );
+    return $session->ID;
 }
 
 #--
@@ -57,6 +67,9 @@ sub spawn {
 
 sub _do_open_file {
     my ($h, $file) = @_[HEAP, ARG0];
+
+    # store filename
+    $h->{file} = $file;
 
     # clean old ips
     foreach my $ip ( keys %{ $h->{ips} } ) {
@@ -81,9 +94,7 @@ sub _do_open_file {
     # force rescanning of the playfield
     $tm->configure(-command => sub { _get_cell_value($h->{bef}->get_torus,@_[1,2]) });
     $tm->tagCell("decay-$id-0", '0,0');
-    $h->{w}{_b_pause}->configure( -state => 'disabled' );
-    $h->{w}{_b_next}->configure( -state => 'normal' );
-    $h->{w}{_b_continue}->configure( -state => 'normal' );
+    _gui_set_pause($h);
 }
 
 
@@ -95,14 +106,80 @@ sub _on_start {
 
     #-- create gui
 
+    # prettyfying tk app.
+    # see http://www.perltk.org/index.php?option=com_content&task=view&id=43&Itemid=37
+    $poe_main_window->optionAdd('*BorderWidth' => 1);
+
+    # menu
+    $poe_main_window->optionAdd('*tearOff', 'false'); # no tear-off menus
+    my $menuitems = [
+        [ Cascade => '~File', -menuitems => [
+            [ Button => '~Open',
+                -command     => $s->postback('_b_open'),
+                -accelerator => 'ctrl+o',
+                -compound    => 'left',
+                -image       => $poe_main_window->Photo('fileopen16'),
+                ],
+            [ Separator => '' ],
+            [ Button => '~Quit',
+                -command     => $s->postback('_b_quit'),
+                -accelerator => 'ctrl+q',
+                -compound    => 'left',
+                -image       => $poe_main_window->Photo('actexit16'),
+                ],
+            ],
+        ],
+        [ Cascade => '~Run', -menuitems => [
+            [ Button => '~Restart',
+                -command     => $s->postback('_b_restart'),
+                -accelerator => 'R',
+                -compound    => 'left',
+                -image       => $poe_main_window->Photo('playstart16'),
+                ],
+            [ Button => '~Pause',
+                -command     => $s->postback('_b_pause'),
+                -accelerator => 'p',
+                -compound    => 'left',
+                -image       => $poe_main_window->Photo('playpause16'),
+                ],
+            [ Button => '~Next',
+                -command     => $s->postback('_b_next'),
+                -accelerator => 'n',
+                -compound    => 'left',
+                -image       => $poe_main_window->Photo('nav1rightarrow16'),
+                ],
+            [ Button => '~Continue',
+                -command     => $s->postback('_b_continue'),
+                -accelerator => 'c',
+                -compound    => 'left',
+                -image       => $poe_main_window->Photo('nav2rightarrow16'),
+                ],
+            [ Separator => '' ],
+            [ Button => '~Breakpoints',
+                -command     => $s->postback('_b_breakpoints'),
+                #-accelerator => 'c',
+                -compound    => 'left',
+                -image       => $poe_main_window->Photo('calbell16'),
+                ],
+            ],
+        ],
+    ];
+    my $menubar = $poe_main_window->Menu( -menuitems => $menuitems );
+    $poe_main_window->configure( -menu => $menubar );
+    $h->{w}{mnu_run} = $menubar->entrycget(1, '-menu');
+
+
     # toolbar
     my @tb = (
-        [ 'Button', 'actexit16',        'quit',     '<Control-q>', '_b_quit' ],
-        [ 'Button', 'fileopen16',       'open',     '<Control-o>', '_b_open' ],
+        [ 'Button', 'actexit16',        'quit',        '<Control-q>', '_b_quit' ],
+        [ 'Button', 'fileopen16',       'open',        '<Control-o>', '_b_open' ],
         [ 'separator' ],
-        [ 'Button', 'playpause16',      'pause',    '<p>',         '_b_pause' ],
-        [ 'Button', 'nav1rightarrow16', 'next',     '<n>',         '_b_next' ],
-        [ 'Button', 'nav2rightarrow16', 'continue', '<c>',         '_b_continue' ],
+        [ 'Button', 'calbell16',        'breakpoints', '<F8>',        '_b_breakpoints' ],
+        [ 'separator' ],
+        [ 'Button', 'playstart16',      'restart',     '<R>',         '_b_restart' ],
+        [ 'Button', 'playpause16',      'pause',       '<p>',         '_b_pause' ],
+        [ 'Button', 'nav1rightarrow16', 'next',        '<n>',         '_b_next' ],
+        [ 'Button', 'nav2rightarrow16', 'continue',    '<c>',         '_b_continue' ],
     );
     my $tb = $poe_main_window->ToolBar(-movable=>0);
     foreach my $item ( @tb ) {
@@ -112,13 +189,11 @@ sub _on_start {
             -image       => $item->[0],
             -tip         => $item->[1],
             -accelerator => $item->[2],
-            -command     => $s->postback($item->[3])
+            -command     => $s->postback($item->[3]),
         );
     }
     $tb->separator(-movable => 0 );
     $h->{w}{ip} = $tb->LabEntry(-label=>'tick', -textvariable=>\$h->{tick},-justify=>'center',-state=>'readonly');
-
-    #
 
     # playfield
     my $fh1 = $poe_main_window->Frame->pack(-fill=>'both', -expand=>1);
@@ -140,15 +215,41 @@ sub _on_start {
 #--
 # gui events
 
+
+#
+# _b_breakpoints();
+#
+# called when the user wants to show/hide breakpoints.
+#
+sub _on_b_breakpoints {
+    my ($k, $h) = @_[KERNEL, HEAP];
+
+    return $k->post($h->{breakpoints}, 'toggle_visibility')
+        if exists $h->{breakpoints};
+
+    my $id = Language::Befunge::Debugger::Breakpoints->spawn(parent=>$poe_main_window);
+    $h->{breakpoints} = $id;
+}
+
+
+#
+# _b_continue();
+#
+# called when the user wants the paused script to be ran.
+#
 sub _on_b_continue {
     my ($k, $h) = @_[KERNEL, HEAP];
     $h->{continue} = 1;
-    $h->{w}{_b_pause}->configure( -state => 'normal' );
-    $h->{w}{_b_next}->configure( -state => 'disabled' );
-    $h->{w}{_b_continue}->configure( -state => 'disabled' );
+    _gui_set_continue($h);
     $k->yield('_b_next');
 }
 
+
+#
+# _b_next();
+#
+# called when the user wants to advance the script one step further.
+#
 sub _on_b_next {
     my ($k,$h) = @_[KERNEL, HEAP];
 
@@ -227,14 +328,24 @@ sub _on_b_next {
     $k->delay_set( '_b_next', $DELAY ) if $h->{continue};
 }
 
+
+#
+# _b_pause();
+#
+# called when the user wants the running script to be paused.
+#
 sub _on_b_pause {
     my ($k, $h) = @_[KERNEL, HEAP];
     $h->{continue} = 0;
-    $h->{w}{_b_pause}->configure( -state => 'disabled' );
-    $h->{w}{_b_next}->configure( -state => 'normal' );
-    $h->{w}{_b_continue}->configure( -state => 'normal' );
+    _gui_set_pause($h);
 }
 
+
+#
+# _b_open();
+#
+# called when the user wants to load another befunge script.
+#
 sub _on_b_open {
     my @types = (
        [ 'Befunge scripts', '.bef' ],
@@ -246,9 +357,27 @@ sub _on_b_open {
         if defined($file) && $file ne '';
 }
 
+
+#
+# _b_quit();
+#
+# called when the user wants to quit the application.
+#
 sub _on_b_quit {
     $poe_main_window->destroy;
 }
+
+
+#
+# _b_restart();
+#
+# reload current file.
+#
+sub _on_b_restart {
+    my ($k,$h) = @_[KERNEL, HEAP];
+    $k->yield('_do_open_file', $h->{file});
+}
+
 
 sub _on_tm_click {
     my ($h, $arg) = @_[HEAP, ARG1];
@@ -264,6 +393,18 @@ sub _on_tm_click {
 #--
 # private subs
 
+
+#
+# _create_ip_struct( $heap, $ip );
+#
+# L::B::Debugger maintains some data associated to the running ips. this
+# sub initialize the $heap data associated to a new $ip so it can be
+# used later on.
+#
+# note: a new ip can be created either during befunge script loading, or
+# when encountering the 't' command (thread) since L::B supports
+# threaded befunge.
+#
 sub _create_ip_struct {
     my ($h, $ip) = @_;
 
@@ -303,12 +444,66 @@ sub _create_ip_struct {
 }
 
 
+#
+# my $value = _get_cell_value( $torus, $row, $col );
+#
+# return the $value of $torus at the position ($row, $col). this
+# function is used by Tk::TableMatrix to fill in the values of the
+# cells.
+#
 sub _get_cell_value {
     my ($torus, $row, $col) = @_;
     my $v = Language::Befunge::Vector->new(2, $col, $row);
     return chr( $torus->get_value($v) );
 }
 
+
+#
+# _gui_set_continue( $heap );
+#
+# update the gui to enable/disable the buttons in order to match the
+# state 'running'. it will use the $heap->{w} structure to find the
+# wanted gui elements.
+#
+sub _gui_set_continue {
+    my ($h) = @_;
+    $h->{w}{_b_pause}   ->configure( -state => 'normal'   );
+    $h->{w}{_b_next}    ->configure( -state => 'disabled' );
+    $h->{w}{_b_continue}->configure( -state => 'disabled' );
+    $h->{w}{mnu_run}->entryconfigure( 1, -state => 'normal'   );
+    $h->{w}{mnu_run}->entryconfigure( 2, -state => 'disabled' );
+    $h->{w}{mnu_run}->entryconfigure( 3, -state => 'disabled' );
+}
+
+
+#
+# _gui_set_pause( $heap );
+#
+# update the gui to enable/disable the buttons in order to match the
+# state 'paused'. it will use the $heap->{w} structure to find the
+# wanted gui elements.
+#
+sub _gui_set_pause {
+    my ($h) = @_;
+    $h->{w}{_b_pause}   ->configure( -state => 'disabled' );
+    $h->{w}{_b_next}    ->configure( -state => 'normal'   );
+    $h->{w}{_b_continue}->configure( -state => 'normal'   );
+    $h->{w}{mnu_run}->entryconfigure( 1, -state => 'disabled' );
+    $h->{w}{mnu_run}->entryconfigure( 2, -state => 'normal'   );
+    $h->{w}{mnu_run}->entryconfigure( 3, -state => 'normal'   );
+}
+
+
+#
+# my $str = _ip_to_label( $ip, $bef );
+#
+# return a stringified value of the Language::Befunge::IP to be
+# displayed in the label. it needs the Language::Befunge::Interpreter to
+# fetch some values in the torus.
+#
+# the stringified value will be sthg like:
+#   IP#2 @4,6 0 (ord=48) [ 32 111 52 32 ]
+#
 sub _ip_to_label {
     my ($ip,$bef) = @_;
     my $id     = $ip->get_id;
@@ -319,6 +514,14 @@ sub _ip_to_label {
     my $chr    = chr $val;
     return "IP#$id \@$x,$y $chr (ord=$val) [@$stack]";
 }
+
+
+#
+# my $str = _vec_to_tablematrix_index( $vector );
+#
+# given a Language::Befunge::Vector object, return its stringified value
+# as Tk::TableMatrix understand it: "x,y".
+#
 sub _vec_to_tablematrix_index {
     my ($vec) = @_;
     my ($x, $y) = $vec->get_all_components;
@@ -354,10 +557,10 @@ breakpoints, etc.
 
 =head1 CLASS METHODS
 
-=head2 Language::Befunge::Debugger->spawn( %opts );
+=head2 my $id = Language::Befunge::Debugger->spawn( %opts );
 
-Create a graphical debugger (a POE session). One can pass the following
-options:
+Create a graphical debugger, and return the associated POE session ID.
+One can pass the following options:
 
 =over 4
 

@@ -21,13 +21,14 @@ WriteMakefile(
     ABSTRACT_FROM       => 'lib/Language/Befunge/Debugger.pm',
     EXE_FILES           => [ 'bin/jqbefdb' ],
     PREREQ_PM => {
+        'Getopt::Euclid'    => 0,
         'Language::Befunge' => 3.01,
         'POE'               => 0,
         'Readonly'          => 0,
+        'Test::More'        => 0,
         'Tk'                => 0,
         'Tk::TableMatrix'   => 0,
         'Tk::ToolBar'       => 0,
-        'Test::More'        => 0,
     },
     dist  => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean => { FILES => [

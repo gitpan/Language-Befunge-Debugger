@@ -12,6 +12,13 @@ High-level changelog
 Low-level changelog
 ===================
 
+0.3.1 Mon Nov 19 18:17:10 CET 2007
+ - possibility to reload file
+ - gui now provides a menu for those who prefer
+ - spawn() method returns poe session id for those who want to use it
+   (dunno what they would want to do, but anyway...)
+ - showing breakpoints window (even if can't set breakpoints)
+
 0.3.0 Fri Nov  9 19:03:44 CET 2007
  - possibility to resume run instead of stepping
 
