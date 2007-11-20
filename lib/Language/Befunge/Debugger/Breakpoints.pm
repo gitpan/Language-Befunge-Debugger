@@ -30,6 +30,7 @@ sub spawn {
             _start     => \&_on_start,
             _stop      => sub { print "ouch!\n" },
             # public events
+            add_breakpoint    => \&_do_add_breakpoint,
             toggle_visibility => \&_do_toggle_visibility,
             # private events
             # gui
@@ -42,6 +43,12 @@ sub spawn {
 
 #--
 # public events
+
+sub _do_add_breakpoint {
+    my ($h, $brkpt) = @_[HEAP, ARG0];
+    $h->{list}->insert(0, $brkpt);
+}
+
 
 sub _do_toggle_visibility {
     my ($h) = $_[HEAP];
@@ -75,6 +82,9 @@ sub _on_start {
     $top->resizable(0,0);
     my ($maxw,$maxh) = $top->geometry =~ /^(\d+)x(\d+)/;
     $top->maxsize($maxw,$maxh); # bug in resizable: minsize in effet but not maxsize
+
+    # initial breakpoint?
+    $k->yield('add_breakpoint', $opts->{breakpoint}) if exists $opts->{breakpoint};
 }
 
 1;
@@ -118,6 +128,11 @@ A Tk window that will be the parent of the toplevel window created. This
 parameter is mandatory.
 
 
+=item breakpoint => $brkpt
+
+An optional breakpoint to be added during session creation.
+
+
 =back
 
 
@@ -125,7 +140,13 @@ parameter is mandatory.
 
 The newly created POE session accepts the following events:
 
+
 =over 4
+
+=item add_breakpoint( $brkpt )
+
+Add a breakpoint in the list of breakpoints.
+
 
 =item toggle_visibility()
 

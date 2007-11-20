@@ -23,7 +23,7 @@ use Tk::ToolBar;
 use POE;
 
 
-our $VERSION = '0.3.1';
+our $VERSION = '0.3.2';
 
 Readonly my $DECAY  => 8;
 Readonly my $DELAY  => 0.1;
@@ -46,6 +46,7 @@ sub spawn {
         inline_states => {
             _start         => \&_on_start,
             # internal actions
+            _do_add_brkpt  => \&_do_add_brkpt,
             _do_open_file  => \&_do_open_file,
             # gui
             _b_breakpoints => \&_on_b_breakpoints,
@@ -64,6 +65,27 @@ sub spawn {
 
 #--
 # private events
+
+sub _do_add_brkpt {
+    my ($k, $h, $args) = @_[KERNEL, HEAP, ARG0];
+    my $brkpt = $args->[0];
+
+    # store new breakpoint.
+    my ($type, $value) = split /: /, $brkpt;
+    $h->{breakpoints}{$type}{$value} = 1;
+
+    # notify breakpoints window.
+    if ( not exists $h->{w}{breakpoints} ) {
+        my $id = Language::Befunge::Debugger::Breakpoints->spawn(
+            parent     => $poe_main_window,
+            breakpoint => $brkpt,
+        );
+        $h->{w}{breakpoints} = $id;
+    } else {
+        $k->post( $h->{w}{breakpoints}, 'add_breakpoint', $brkpt );
+    }
+}
+
 
 sub _do_open_file {
     my ($h, $file) = @_[HEAP, ARG0];
@@ -224,11 +246,11 @@ sub _on_start {
 sub _on_b_breakpoints {
     my ($k, $h) = @_[KERNEL, HEAP];
 
-    return $k->post($h->{breakpoints}, 'toggle_visibility')
-        if exists $h->{breakpoints};
+    return $k->post($h->{w}{breakpoints}, 'toggle_visibility')
+        if exists $h->{w}{breakpoints};
 
     my $id = Language::Befunge::Debugger::Breakpoints->spawn(parent=>$poe_main_window);
-    $h->{breakpoints} = $id;
+    $h->{w}{breakpoints} = $id;
 }
 
 
@@ -325,7 +347,17 @@ sub _on_b_next {
     }
 
     # fire again if user asked for continue.
-    $k->delay_set( '_b_next', $DELAY ) if $h->{continue};
+    my $vec = $ip->get_position;
+    my ($x, $y) = $vec->get_all_components;
+    my $brkpts = $h->{breakpoints};
+    my $is_breakpoint = exists $brkpts->{row}{$y}
+        || exists $brkpts->{col}{$x}
+        || exists $brkpts->{pos}{"$x,$y"};
+    if ( $is_breakpoint ) {
+        $k->yield('_b_pause');
+    } else {
+        $k->delay_set( '_b_next', $DELAY ) if $h->{continue};
+    }
 }
 
 
@@ -380,13 +412,24 @@ sub _on_b_restart {
 
 
 sub _on_tm_click {
-    my ($h, $arg) = @_[HEAP, ARG1];
+    my ($h, $s, $arg) = @_[HEAP, SESSION, ARG1];
+
     my ($old, $new) = @$arg;
     my ($x,$y) = split /,/, $new;
-    my $vec = Language::Befunge::Vector->new(2, $y, $x);
-    my $val = $h->{bef}->get_torus->get_value($vec);
-    my $chr = chr $val;
-    $poe_main_window->Dialog( -text => "($x,$y) = $val = '$chr'" )->Show;
+
+    #my $vec = Language::Befunge::Vector->new(2, $y, $x);
+    #my $val = $h->{bef}->get_torus->get_value($vec);
+    #my $chr = chr $val;
+
+
+    my $menuitems = [ [ Cascade => '~Add breakpoint', -menuitems => [
+        [ Button=>"on ~row $x",      -command=>$s->postback('_do_add_brkpt', "row: $x") ],
+        [ Button=>"on ~col $y",      -command=>$s->postback('_do_add_brkpt', "col: $y") ],
+        [ Button=>"at ~pos ($y,$x)", -command=>$s->postback('_do_add_brkpt', "pos: $y,$x") ],
+    ] ] ];
+
+    my $m = $poe_main_window->Menu( -menuitems => $menuitems );
+    $m->Popup( -popover => 'cursor', -popanchor => 'nw' );
 }
 
 
