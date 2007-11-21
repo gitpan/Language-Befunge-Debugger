@@ -19,9 +19,16 @@ use Tk::TableMatrix;
 use Tk::ToolBar;
 use POE;
 
+
 #--
 # constructor
 
+#
+# my $id = Language::Befunge::Debugger::Breakpoints->spawn( %opts );
+#
+# create a new debugger gui for a befunge script. refer to the embedded
+# pod for an explanation of the supported options.
+#
 sub spawn {
     my ($class, %opts) = @_;
 
@@ -30,10 +37,11 @@ sub spawn {
             _start     => \&_on_start,
             _stop      => sub { print "ouch!\n" },
             # public events
-            add_breakpoint    => \&_do_add_breakpoint,
-            toggle_visibility => \&_do_toggle_visibility,
+            breakpoint_add         => \&_do_breakpoint_add,
+            visibility_toggle      => \&_do_visibility_toggle,
             # private events
-            # gui
+            # gui events
+            _b_breakpoint_remove   => \&_on_b_breakpoint_remove,
         },
         args => \%opts,
     );
@@ -44,13 +52,29 @@ sub spawn {
 #--
 # public events
 
-sub _do_add_breakpoint {
+#
+# breakpoint_add( $brkpt );
+#
+# Add $brkpt to the list of breakpoints.
+#
+sub _do_breakpoint_add {
     my ($h, $brkpt) = @_[HEAP, ARG0];
-    $h->{list}->insert(0, $brkpt);
+
+    my @elems = $h->{list}->get(0, 'end');
+    push @elems, $brkpt;
+
+    $h->{list}->delete(0, 'end');
+    $h->{list}->insert(0, sort @elems);
+    $h->{but_remove}->configure(-state => 'normal' );
 }
 
 
-sub _do_toggle_visibility {
+#
+# visibility_toggle();
+#
+# Request window to be hidden / shown depending on its previous state.
+#
+sub _do_visibility_toggle {
     my ($h) = $_[HEAP];
 
     my $method = $h->{mw}->state eq 'normal' ? 'withdraw' : 'deiconify';
@@ -61,21 +85,34 @@ sub _do_toggle_visibility {
 #--
 # private events
 
+#
+# _on_start( \%opts );
+#
+# session initialization. %opts is received from spawn();
+#
 sub _on_start {
-    my ($k, $h, $s, $opts) = @_[KERNEL, HEAP, SESSION, ARG0];
+    my ($k, $h, $from, $s, $opts) = @_[KERNEL, HEAP, SENDER, SESSION, ARG0];
 
     #-- create gui
 
     my $top = $opts->{parent}->Toplevel(-title => 'Breakpoints');
     $h->{mw}   = $top;
     $h->{list} = $top->Listbox->pack;
-    $top->Button(-text=>'Remove', -width=>6,
-        -command=>$s->postback('toggle_visibility'))->pack(-side=>'left',-fill=>'x',-expand=>1);
-    $top->Button(-text=>'Close', -width=>6,
-        -command=>$s->postback('toggle_visibility'))->pack(-side=>'left',-fill=>'x',-expand=>1);
-    $top->protocol( WM_DELETE_WINDOW => $s->postback('toggle_visibility') );
+    $h->{but_remove} = $top->Button(
+        -text    => 'Remove',
+        -state   => 'disabled',
+        -width   => 6,
+        -command => $s->postback('_b_breakpoint_remove')
+    )->pack(-side=>'left',-fill=>'x',-expand=>1);
+    $top->Button(
+        -text    => 'Close',
+        -width   => 6,
+        -command => $s->postback('visibility_toggle')
+    )->pack(-side=>'left',-fill=>'x',-expand=>1);
 
-    $top->bind( '<F8>', $s->postback('toggle_visibility') );
+    # trap some events
+    $top->protocol( WM_DELETE_WINDOW => $s->postback('visibility_toggle') );
+    $top->bind( '<F8>', $s->postback('visibility_toggle') );
 
     
     $top->update;               # force redraw
@@ -83,9 +120,30 @@ sub _on_start {
     my ($maxw,$maxh) = $top->geometry =~ /^(\d+)x(\d+)/;
     $top->maxsize($maxw,$maxh); # bug in resizable: minsize in effet but not maxsize
 
+
+    # -- other inits
+    $h->{parent_session} = $from->ID;
     # initial breakpoint?
-    $k->yield('add_breakpoint', $opts->{breakpoint}) if exists $opts->{breakpoint};
+    $k->yield('breakpoint_add', $opts->{breakpoint}) if exists $opts->{breakpoint};
 }
+
+
+#--
+# gui events
+
+#
+# _b_breakpoint_remove();
+#
+# called when the user wants to remove a breakpoint.
+#
+sub _on_b_breakpoint_remove {
+    my ($k, $h) = @_[KERNEL, HEAP];
+    my ($idx) = $h->{list}->curselection;
+    my $brkpt = $h->{list}->get($idx);
+    $h->{list}->delete($idx);
+    $k->post( $h->{parent_session}, 'breakpoint_remove', $brkpt );
+}
+
 
 1;
 
@@ -101,7 +159,7 @@ Language::Befunge::Debugger::Breakpoints - a window listing breakpoints
 =head1 SYNOPSYS
 
     my $id = Language::Befunge::Debugger::Breakpoints->spawn(%opts);
-    $kernel->post( $id, 'toggle_visibility' );
+    $kernel->post( $id, 'visibility_toggle' );
 
 
 
@@ -143,12 +201,12 @@ The newly created POE session accepts the following events:
 
 =over 4
 
-=item add_breakpoint( $brkpt )
+=item breakpoint_add( $brkpt )
 
 Add a breakpoint in the list of breakpoints.
 
 
-=item toggle_visibility()
+=item visibility_toggle()
 
 Request the window to be hidden or restaured, depending on its previous
 state. Note that closing the window is actually interpreted as hiding

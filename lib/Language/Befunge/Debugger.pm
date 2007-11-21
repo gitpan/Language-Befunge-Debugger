@@ -23,7 +23,7 @@ use Tk::ToolBar;
 use POE;
 
 
-our $VERSION = '0.3.2';
+our $VERSION = '0.3.3';
 
 Readonly my $DECAY  => 8;
 Readonly my $DELAY  => 0.1;
@@ -34,7 +34,7 @@ Readonly my @COLORS => ( [255,0,0], [0,0,255], [0,255,0], [255,255,0], [255,0,25
 # constructor
 
 #
-# my $id = Language::Befunge::Debugger->spawn(%ops);
+# my $id = Language::Befunge::Debugger->spawn(%opts);
 #
 # create a new debugger gui for a befunge script. refer to the embedded
 # pod for an explanation of the supported options.
@@ -45,10 +45,12 @@ sub spawn {
     my $session = POE::Session->create(
         inline_states => {
             _start         => \&_on_start,
-            # internal actions
-            _do_add_brkpt  => \&_do_add_brkpt,
-            _do_open_file  => \&_do_open_file,
-            # gui
+            # public events
+            breakpoint_remove => \&_do_breakpoint_remove,
+            # private events
+            _breakpoint_add => \&_do_breakpoint_add,
+            _open_file      => \&_do_open_file,
+            # gui events
             _b_breakpoints => \&_on_b_breakpoints,
             _b_continue    => \&_on_b_continue,
             _b_next        => \&_on_b_next,
@@ -63,10 +65,32 @@ sub spawn {
     return $session->ID;
 }
 
+
+#--
+# public events
+
+#
+# breakpoint_remove( $brkpt );
+#
+# remove $brkpt from the list of active breakpoints.
+#
+sub _do_breakpoint_remove {
+    my ($k, $h, $brkpt) = @_[KERNEL, HEAP, ARG0];
+    my ($type, $value) = split /: /, $brkpt;
+    delete $h->{breakpoints}{$type}{$value}; # remove breakpoint
+}
+
+
 #--
 # private events
 
-sub _do_add_brkpt {
+#
+# breakpoint_add( $brkpt );
+#
+# add $brkpt to the list of active breakpoints. request LDB::Breakpoints
+# window to add it to its list.
+#
+sub _do_breakpoint_add {
     my ($k, $h, $args) = @_[KERNEL, HEAP, ARG0];
     my $brkpt = $args->[0];
 
@@ -82,11 +106,17 @@ sub _do_add_brkpt {
         );
         $h->{w}{breakpoints} = $id;
     } else {
-        $k->post( $h->{w}{breakpoints}, 'add_breakpoint', $brkpt );
+        $k->post( $h->{w}{breakpoints}, 'breakpoint_add', $brkpt );
     }
 }
 
 
+#
+# _open_file( $file );
+#
+# force reloading of $file, with everything that it implies - ie,
+# reinitializes debugger state.
+#
 sub _do_open_file {
     my ($h, $file) = @_[HEAP, ARG0];
 
@@ -120,11 +150,16 @@ sub _do_open_file {
 }
 
 
+#
+# _on_start( \%opts );
+#
+# session initialization. %opts is received from spawn();
+#
 sub _on_start {
     my ($k, $h, $s, $opts) = @_[ KERNEL, HEAP, SESSION, ARG0 ];
 
     #-- load befunge file
-    $k->yield( $opts->{file} ? ('_do_open_file', $opts->{file}) : '_b_open' );
+    $k->yield( $opts->{file} ? ('_open_file', $opts->{file}) : '_b_open' );
 
     #-- create gui
 
@@ -234,9 +269,9 @@ sub _on_start {
     $h->{w}{f_ips} = $poe_main_window->Frame->pack(-fill=>'x');
 }
 
+
 #--
 # gui events
-
 
 #
 # _b_breakpoints();
@@ -246,7 +281,7 @@ sub _on_start {
 sub _on_b_breakpoints {
     my ($k, $h) = @_[KERNEL, HEAP];
 
-    return $k->post($h->{w}{breakpoints}, 'toggle_visibility')
+    return $k->post($h->{w}{breakpoints}, 'visibility_toggle')
         if exists $h->{w}{breakpoints};
 
     my $id = Language::Befunge::Debugger::Breakpoints->spawn(parent=>$poe_main_window);
@@ -385,7 +420,7 @@ sub _on_b_open {
     );
     # i know, this prevent poe from running
     my $file = $poe_main_window->getOpenFile(-filetypes => \@types);
-    $_[KERNEL]->yield( '_do_open_file', $file )
+    $_[KERNEL]->yield( '_open_file', $file )
         if defined($file) && $file ne '';
 }
 
@@ -407,10 +442,15 @@ sub _on_b_quit {
 #
 sub _on_b_restart {
     my ($k,$h) = @_[KERNEL, HEAP];
-    $k->yield('_do_open_file', $h->{file});
+    $k->yield('_open_file', $h->{file});
 }
 
 
+#
+# _tm_click();
+#
+# called when the user clicks on the field. used to add breakpoints.
+#
 sub _on_tm_click {
     my ($h, $s, $arg) = @_[HEAP, SESSION, ARG1];
 
@@ -423,9 +463,9 @@ sub _on_tm_click {
 
 
     my $menuitems = [ [ Cascade => '~Add breakpoint', -menuitems => [
-        [ Button=>"on ~row $x",      -command=>$s->postback('_do_add_brkpt', "row: $x") ],
-        [ Button=>"on ~col $y",      -command=>$s->postback('_do_add_brkpt', "col: $y") ],
-        [ Button=>"at ~pos ($y,$x)", -command=>$s->postback('_do_add_brkpt', "pos: $y,$x") ],
+        [ Button=>"on ~row $x",      -command=>$s->postback('_breakpoint_add', "row: $x") ],
+        [ Button=>"on ~col $y",      -command=>$s->postback('_breakpoint_add', "col: $y") ],
+        [ Button=>"at ~pos ($y,$x)", -command=>$s->postback('_breakpoint_add', "pos: $y,$x") ],
     ] ] ];
 
     my $m = $poe_main_window->Menu( -menuitems => $menuitems );
@@ -610,6 +650,22 @@ One can pass the following options:
 =item file => $file
 
 A befunge program to be loaded for debug purposes.
+
+
+=back
+
+
+
+=head1 PUBLIC EVENTS
+
+The POE session accepts the following events:
+
+
+=over 4
+
+=item breakpoint_remove( $brkpt )
+
+Remove a breakpoint from the list of active breakpoints.
 
 
 =back

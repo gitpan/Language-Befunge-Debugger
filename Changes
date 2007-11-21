@@ -12,6 +12,10 @@ High-level changelog
 Low-level changelog
 ===================
 
+0.3.3 Wed Nov 21 19:36:50 CET 2007
+ - breakpoints removal allowed
+ - sorting breakpoints in breakpoints window
+
 0.3.2 Tue Nov 20 17:50:27 CET 2007
  - can set breakpoint on row, column or exact position
 
