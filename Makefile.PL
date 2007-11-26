@@ -23,6 +23,7 @@ WriteMakefile(
     PREREQ_PM => {
         'Getopt::Euclid'    => 0,
         'Language::Befunge' => 3.01,
+        'List::MoreUtils'   => 0,
         'POE'               => 0,
         'Readonly'          => 0,
         'Test::More'        => 0,

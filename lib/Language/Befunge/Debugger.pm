@@ -23,7 +23,7 @@ use Tk::ToolBar;
 use POE;
 
 
-our $VERSION = '0.3.3';
+our $VERSION = '0.3.4';
 
 Readonly my $DECAY  => 8;
 Readonly my $DELAY  => 0.1;

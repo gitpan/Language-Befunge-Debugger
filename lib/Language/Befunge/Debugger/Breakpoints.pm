@@ -11,6 +11,7 @@ package Language::Befunge::Debugger::Breakpoints;
 use strict;
 use warnings;
 
+use List::MoreUtils qw[ firstidx ];
 use Readonly;
 use Tk; # should come before POE
 use Tk::Dialog;
@@ -65,6 +66,7 @@ sub _do_breakpoint_add {
 
     $h->{list}->delete(0, 'end');
     $h->{list}->insert(0, sort @elems);
+    $h->{list}->selectionSet( firstidx { $_ eq $brkpt } $h->{list}->get(0, 'end') );
     $h->{but_remove}->configure(-state => 'normal' );
 }
 
@@ -139,9 +141,12 @@ sub _on_start {
 sub _on_b_breakpoint_remove {
     my ($k, $h) = @_[KERNEL, HEAP];
     my ($idx) = $h->{list}->curselection;
+    return unless defined $idx;
     my $brkpt = $h->{list}->get($idx);
     $h->{list}->delete($idx);
     $k->post( $h->{parent_session}, 'breakpoint_remove', $brkpt );
+
+    $h->{but_remove}->configure(-state=>'disabled') if $h->{list}->index('end') == 0;
 }
 
 

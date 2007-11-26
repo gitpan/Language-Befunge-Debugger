@@ -1,6 +1,6 @@
 ---
 name: Language-Befunge-Debugger
-version: 0.3.3
+version: 0.3.4
 author:
   - 'Jerome Quelin <jquelin@cpan.org>'
 abstract: a graphical debugger for Language::Befunge
@@ -10,14 +10,17 @@ resources:
 requires:
   Getopt::Euclid: 0
   Language::Befunge: 3.01
+  List::MoreUtils: 0
   POE: 0
   Readonly: 0
   Tk: 0
   Tk::TableMatrix: 0
   Tk::ToolBar: 0
+  perl: 5.008
 build_requires:
   Getopt::Euclid: 0
   Language::Befunge: 3.01
+  List::MoreUtils: 0
   POE: 0
   Readonly: 0
   Test::More: 0
@@ -25,10 +28,13 @@ build_requires:
   Tk::TableMatrix: 0
   Tk::ToolBar: 0
   perl: 5.008
+recommends:
+  Test::Pod: 0
+  Test::Pod::Coverage: 0
 provides:
   Language::Befunge::Debugger:
     file: lib/Language/Befunge/Debugger.pm
-    version: 0.3.3
+    version: 0.3.4
   Language::Befunge::Debugger::Breakpoints:
     file: lib/Language/Befunge/Debugger/Breakpoints.pm
 generated_by: Module::Build version 0.2808
