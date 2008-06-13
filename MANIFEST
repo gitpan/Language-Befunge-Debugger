@@ -1,6 +1,8 @@
 bin/jqbefdb
 Build.PL
 Changes
+examples/book.bef
+examples/thread.bef
 lib/Language/Befunge/Debugger.pm
 lib/Language/Befunge/Debugger/Breakpoints.pm
 LICENSE

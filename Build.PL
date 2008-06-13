@@ -19,7 +19,7 @@ my $builder = Module::Build->new
     dist_version_from => 'lib/Language/Befunge/Debugger.pm',
     build_requires    => {
         'Getopt::Euclid'    => 0,
-        'Language::Befunge' => 3.01,
+        'Language::Befunge' => 4.01,
         'List::MoreUtils'   => 0,
         'POE'               => 0,
         'Readonly'          => 0,
@@ -31,7 +31,7 @@ my $builder = Module::Build->new
     },
     requires          => {
         'Getopt::Euclid'    => 0,
-        'Language::Befunge' => 3.01,
+        'Language::Befunge' => 4.01,
         'List::MoreUtils'   => 0,
         'POE'               => 0,
         'Readonly'          => 0,

@@ -12,6 +12,9 @@ High-level changelog
 Low-level changelog
 ===================
 
+0.3.5 Fri Jun 13 14:29:14 CEST 2008
+ - ported to new LB 4.x api
+
 0.3.4 Mon Nov 26 13:05:49 CET 2007
  - more robust code in LBD::Breakpoints
  - kwalitee/cpants release

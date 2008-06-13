@@ -23,7 +23,7 @@ use Tk::ToolBar;
 use POE;
 
 
-our $VERSION = '0.3.4';
+our $VERSION = '0.3.5';
 
 Readonly my $DECAY  => 8;
 Readonly my $DELAY  => 0.1;
@@ -133,7 +133,7 @@ sub _do_open_file {
     $tm->tagDelete($_) for $tm->tagNames('decay-*');
 
     # load the new file
-    my $bef = $h->{bef} = Language::Befunge->new( $file );
+    my $bef = $h->{bef} = Language::Befunge->new({file=>$file});
     my $newip = Language::Befunge::IP->new($bef->get_dimensions);
     $bef->set_ips( [ $newip ] );
     $bef->set_retval(0);
@@ -144,7 +144,7 @@ sub _do_open_file {
     my $id = $newip->get_id;
 
     # force rescanning of the playfield
-    $tm->configure(-command => sub { _get_cell_value($h->{bef}->get_torus,@_[1,2]) });
+    $tm->configure(-command => sub { _get_cell_value($h->{bef}->storage,@_[1,2]) });
     $tm->tagCell("decay-$id-0", '0,0');
     _gui_set_pause($h);
 }
@@ -457,7 +457,7 @@ sub _on_tm_click {
     my ($old, $new) = @$arg;
     my ($x,$y) = split /,/, $new;
 
-    #my $vec = Language::Befunge::Vector->new(2, $y, $x);
+    #my $vec = Language::Befunge::Vector->new($y, $x);
     #my $val = $h->{bef}->get_torus->get_value($vec);
     #my $chr = chr $val;
 
@@ -528,16 +528,16 @@ sub _create_ip_struct {
 
 
 #
-# my $value = _get_cell_value( $torus, $row, $col );
+# my $value = _get_cell_value( $storage, $row, $col );
 #
-# return the $value of $torus at the position ($row, $col). this
+# return the $value of $storage at the position ($row, $col). this
 # function is used by Tk::TableMatrix to fill in the values of the
 # cells.
 #
 sub _get_cell_value {
-    my ($torus, $row, $col) = @_;
-    my $v = Language::Befunge::Vector->new(2, $col, $row);
-    return chr( $torus->get_value($v) );
+    my ($storage, $row, $col) = @_;
+    my $v = Language::Befunge::Vector->new($col, $row);
+    return $storage->get_char($v);
 }
 
 
@@ -593,7 +593,7 @@ sub _ip_to_label {
     my $vec    = $ip->get_position;
     my ($x,$y) = $vec->get_all_components;
     my $stack  = $ip->get_toss;
-    my $val    = $bef->get_torus->get_value($vec);
+    my $val    = $bef->storage->get_value($vec);
     my $chr    = chr $val;
     return "IP#$id \@$x,$y $chr (ord=$val) [@$stack]";
 }
