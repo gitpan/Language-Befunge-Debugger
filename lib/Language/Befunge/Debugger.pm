@@ -23,7 +23,7 @@ use Tk::ToolBar;
 use POE;
 
 
-our $VERSION = '0.3.5';
+our $VERSION = '0.3.6';
 
 Readonly my $DECAY  => 8;
 Readonly my $DELAY  => 0.1;
@@ -53,6 +53,7 @@ sub spawn {
             # gui events
             _b_breakpoints => \&_on_b_breakpoints,
             _b_continue    => \&_on_b_continue,
+            _b_forward     => \&_on_b_forward,
             _b_next        => \&_on_b_next,
             _b_open        => \&_on_b_open,
             _b_pause       => \&_on_b_pause,
@@ -144,7 +145,7 @@ sub _do_open_file {
     my $id = $newip->get_id;
 
     # force rescanning of the playfield
-    $tm->configure(-command => sub { _get_cell_value($h->{bef}->storage,@_[1,2]) });
+    $tm->configure(-command => sub { _get_cell_value($h->{bef}->get_storage,@_[1,2]) });
     $tm->tagCell("decay-$id-0", '0,0');
     _gui_set_pause($h);
 }
@@ -211,6 +212,12 @@ sub _on_start {
                 -compound    => 'left',
                 -image       => $poe_main_window->Photo('nav2rightarrow16'),
                 ],
+            [ Button => 'Fast forward',
+                -command     => $s->postback('_b_forward'),
+                -accelerator => 'w',
+                -compound    => 'left',
+                -image       => $poe_main_window->Photo('playend16'),
+                ],
             [ Separator => '' ],
             [ Button => '~Breakpoints',
                 -command     => $s->postback('_b_breakpoints'),
@@ -228,15 +235,16 @@ sub _on_start {
 
     # toolbar
     my @tb = (
-        [ 'Button', 'actexit16',        'quit',        '<Control-q>', '_b_quit' ],
-        [ 'Button', 'fileopen16',       'open',        '<Control-o>', '_b_open' ],
-        [ 'separator' ],
-        [ 'Button', 'calbell16',        'breakpoints', '<F8>',        '_b_breakpoints' ],
-        [ 'separator' ],
-        [ 'Button', 'playstart16',      'restart',     '<R>',         '_b_restart' ],
-        [ 'Button', 'playpause16',      'pause',       '<p>',         '_b_pause' ],
-        [ 'Button', 'nav1rightarrow16', 'next',        '<n>',         '_b_next' ],
-        [ 'Button', 'nav2rightarrow16', 'continue',    '<c>',         '_b_continue' ],
+        [ 'Button', 'actexit16',        'quit',         '<Control-q>', '_b_quit'        ],
+        [ 'Button', 'fileopen16',       'open',         '<Control-o>', '_b_open'        ],
+        [ 'separator'                                                                   ],
+        [ 'Button', 'calbell16',        'breakpoints',  '<F8>',        '_b_breakpoints' ],
+        [ 'separator'                                                                   ],
+        [ 'Button', 'playstart16',      'restart',      '<R>',         '_b_restart'     ],
+        [ 'Button', 'playpause16',      'pause',        '<p>',         '_b_pause'       ],
+        [ 'Button', 'nav1rightarrow16', 'next',         '<n>',         '_b_next'        ],
+        [ 'Button', 'nav2rightarrow16', 'continue',     '<c>',         '_b_continue'    ],
+        [ 'Button', 'playend16',        'fast forward', '<f>',         '_b_forward'     ],
     );
     my $tb = $poe_main_window->ToolBar(-movable=>0);
     foreach my $item ( @tb ) {
@@ -257,8 +265,8 @@ sub _on_start {
     my $tm = $fh1->Scrolled( 'TableMatrix',
         -bg         => 'white',
         -scrollbars => 'osoe',
-        -cols       => 80,
-        -rows       => 25,
+        -cols       => 200,
+        -rows       => 999,
         -colwidth   => 3,
         -state      => 'disabled',
         -browsecmd  => $s->postback('_tm_click'),
@@ -303,6 +311,19 @@ sub _on_b_continue {
 
 
 #
+# _b_forward();
+#
+# called when the user wants the paused script to be ran as close as
+# real time as possible.
+#
+sub _on_b_forward {
+    my ($k, $h) = @_[KERNEL, HEAP];
+    $h->{continue} = 2;
+    _gui_set_continue($h);
+    $k->yield('_b_next');
+}
+
+#
 # _b_next();
 #
 # called when the user wants to advance the script one step further.
@@ -337,7 +358,6 @@ sub _on_b_next {
         next unless exists $oldpos->[$i];
         $tm->tagCell("decay-$id-$i", $oldpos->[$i]);
     }
-
 
 
     # update gui
@@ -391,7 +411,8 @@ sub _on_b_next {
     if ( $is_breakpoint ) {
         $k->yield('_b_pause');
     } else {
-        $k->delay_set( '_b_next', $DELAY ) if $h->{continue};
+        $k->yield( '_b_next' ) if $h->{continue} == 2;
+        $k->delay_set( '_b_next', $DELAY ) if $h->{continue} == 1;
     }
 }
 
@@ -553,6 +574,7 @@ sub _gui_set_continue {
     $h->{w}{_b_pause}   ->configure( -state => 'normal'   );
     $h->{w}{_b_next}    ->configure( -state => 'disabled' );
     $h->{w}{_b_continue}->configure( -state => 'disabled' );
+    $h->{w}{_b_forward} ->configure( -state => 'disabled' );
     $h->{w}{mnu_run}->entryconfigure( 1, -state => 'normal'   );
     $h->{w}{mnu_run}->entryconfigure( 2, -state => 'disabled' );
     $h->{w}{mnu_run}->entryconfigure( 3, -state => 'disabled' );
@@ -571,6 +593,7 @@ sub _gui_set_pause {
     $h->{w}{_b_pause}   ->configure( -state => 'disabled' );
     $h->{w}{_b_next}    ->configure( -state => 'normal'   );
     $h->{w}{_b_continue}->configure( -state => 'normal'   );
+    $h->{w}{_b_forward} ->configure( -state => 'normal'   );
     $h->{w}{mnu_run}->entryconfigure( 1, -state => 'disabled' );
     $h->{w}{mnu_run}->entryconfigure( 2, -state => 'normal'   );
     $h->{w}{mnu_run}->entryconfigure( 3, -state => 'normal'   );
@@ -593,7 +616,7 @@ sub _ip_to_label {
     my $vec    = $ip->get_position;
     my ($x,$y) = $vec->get_all_components;
     my $stack  = $ip->get_toss;
-    my $val    = $bef->storage->get_value($vec);
+    my $val    = $bef->get_storage->get_value($vec);
     my $chr    = chr $val;
     return "IP#$id \@$x,$y $chr (ord=$val) [@$stack]";
 }
